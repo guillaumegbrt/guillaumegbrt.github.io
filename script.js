@@ -9,14 +9,17 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer: document.getElementById('results-container'),
         chartCanvas: document.getElementById('results-chart'),
 
-        // Nouveaux éléments pour le type de bien
-        propertyTypeRadios: document.querySelectorAll('input[name="property_type"]'),
+        // Nouveaux éléments pour le type de bien (boutons)
+        propertyTypeButtons: document.querySelectorAll('#property-type-buttons button'),
+        propertyTypeGroup: document.getElementById('property-type-buttons'),
         
-        // Options spécifiques "Bien neuf"
+        // Options spécifiques "Bien neuf" (boutons)
         newBuildOptionsDiv: document.getElementById('new-build-options'),
-        typeBienRadios: document.querySelectorAll('input[name="type_bien"]'),
+        typeBienButtons: document.querySelectorAll('#type-bien-buttons button'),
+        typeBienGroup: document.getElementById('type-bien-buttons'),
         notaryOptionsDiv: document.getElementById('notary-options'),
-        notaryTypeRadios: document.querySelectorAll('input[name="notary_type"]'),
+        notaryTypeButtons: document.querySelectorAll('#notary-options button'),
+        notaryTypeGroup: document.getElementById('notary-options'),
         tvaReduiteLabel: document.getElementById('tva-reduite-label'), // Label complet pour cacher/montrer
 
         // Nouveaux éléments spécifiques "Bien ancien"
@@ -225,25 +228,37 @@ document.addEventListener('DOMContentLoaded', () => {
                             // Apport personnel limité à 10% du coût du bien pour ce simulateur
                             const apport = with_apport ? Math.min(params.liquidity, cost * 0.1) : 0;
                             
-                            let loan_monthly_max_allowed = max_mens - assurance_monthly;
-                            if (loan_monthly_max_allowed < 0) {
+                            // NOUVEAU: Calcul des contributions mensuelles PTZ et Action Logement pour le taux d'endettement
+                            const ptz_monthly_contribution = (params.duration_years > 0 && ptz_amt > 0) ? ptz_amt / (params.duration_years * 12) : 0;
+                            const al_monthly_contribution = (al_amt > 0) ? capitalToMonthly(al_amt, 1.0, params.duration_years) : 0;
+
+
+                            let allowed_monthly_for_principal = max_mens - assurance_monthly - ptz_monthly_contribution - al_monthly_contribution;
+                            
+                            if (allowed_monthly_for_principal < 0) {
                                 high = cost;
                                 continue;
                             }
 
-                            const loan_amt = monthlyToCapital(loan_monthly_max_allowed, params.base_rate, params.duration_years);
+                            const loan_amt = monthlyToCapital(allowed_monthly_for_principal, params.base_rate, params.duration_years);
+                            const loan_monthly_actual = capitalToMonthly(loan_amt, params.base_rate, params.duration_years);
+
                             const total_cost_with_notary = cost + notary;
-                            const total_funded = loan_amt + ptz_amt + al_amt + apport;
-                            const gap = total_cost_with_notary - total_funded;
+                            const total_funded_from_loans = loan_amt + ptz_amt + al_amt;
+                            const total_cost_including_notary_minus_apport = total_cost_with_notary - apport;
+                            
+                            const gap = total_cost_including_notary_minus_apport - total_funded_from_loans;
+
 
                             if (Math.abs(gap) < 1) { // Tolérance pour la convergence
                                  bestResult = {
                                     nom: label,
-                                    mensualite: loan_monthly_max_allowed + assurance_monthly,
-                                    ptz: ptz_amt, ptz_monthly: 0, // PTZ has no monthly payment
-                                    action_logement: al_amt, action_logement_monthly: al_amt > 0 ? capitalToMonthly(al_amt, 1.0, params.duration_years) : 0, // Assuming 1% for Action Logement if it has a payment
+                                    // NOUVEAU: Calcul de la mensualité totale incluant toutes les contributions
+                                    mensualite: loan_monthly_actual + ptz_monthly_contribution + al_monthly_contribution + assurance_monthly,
+                                    ptz: ptz_amt, ptz_monthly: ptz_monthly_contribution, 
+                                    action_logement: al_amt, action_logement_monthly: al_monthly_contribution, 
                                     assurance_monthly, tva: vat, cout_total: cost,
-                                    credit_amortissable: loan_amt, credit_monthly: loan_monthly_max_allowed,
+                                    credit_amortissable: loan_amt, credit_monthly: loan_monthly_actual,
                                     notary, montant_empruntable: loan_amt + ptz_amt + al_amt, apport
                                 };
                                 break;
@@ -253,13 +268,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 high = cost;
                             } else {
                                 low = cost;
+                                // Save the best result found so far if it's better (i.e., higher cost)
                                  bestResult = {
                                     nom: label,
-                                    mensualite: loan_monthly_max_allowed + assurance_monthly,
-                                    ptz: ptz_amt, ptz_monthly: 0,
-                                    action_logement: al_amt, action_logement_monthly: al_amt > 0 ? capitalToMonthly(al_amt, 1.0, params.duration_years) : 0,
+                                    mensualite: loan_monthly_actual + ptz_monthly_contribution + al_monthly_contribution + assurance_monthly,
+                                    ptz: ptz_amt, ptz_monthly: ptz_monthly_contribution,
+                                    action_logement: al_amt, action_logement_monthly: al_monthly_contribution,
                                     assurance_monthly, tva: vat, cout_total: cost,
-                                    credit_amortissable: loan_amt, credit_monthly: loan_monthly_max_allowed,
+                                    credit_amortissable: loan_amt, credit_monthly: loan_monthly_actual,
                                     notary, montant_empruntable: loan_amt + ptz_amt + al_amt, apport
                                 };
                             }
@@ -282,6 +298,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- GESTION DE L'INTERFACE ---
 
+    function setupButtonToggles(buttonGroup, paramName) {
+        buttonGroup.addEventListener('click', (event) => {
+            if (event.target.tagName === 'BUTTON') {
+                // Remove 'selected' from all buttons in the group
+                Array.from(buttonGroup.children).forEach(button => {
+                    button.classList.remove('selected');
+                });
+                // Add 'selected' to the clicked button
+                event.target.classList.add('selected');
+                // Update visibility if property type is changed
+                if (paramName === 'property_type') {
+                    updateVisibility();
+                }
+            }
+        });
+    }
+
+
+    function getSelectedButtonValue(buttonGroup) {
+        const selectedButton = buttonGroup.querySelector('.selected');
+        return selectedButton ? selectedButton.dataset.value : null;
+    }
+
+
     function updateCommunes() {
         const dept = DOMElements.deptSelect.value;
         const communes = Object.keys(zonageData.communes?.[dept] || {}).sort((a,b) => a.localeCompare(b));
@@ -292,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateVisibility() {
-        const propertyType = document.querySelector('input[name="property_type"]:checked').value;
+        const propertyType = getSelectedButtonValue(DOMElements.propertyTypeGroup);
 
         // Hide all specific option groups first
         DOMElements.newBuildOptionsDiv.style.display = 'none';
@@ -345,10 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         DOMElements.deptSelect.addEventListener('change', updateCommunes);
         
-        // Listen to changes on all property type radios
-        DOMElements.propertyTypeRadios.forEach(radio => {
-            radio.addEventListener('change', updateVisibility);
-        });
+        // Listen to changes on all property type radios -> now buttons
+        setupButtonToggles(DOMElements.propertyTypeGroup, 'property_type');
+        setupButtonToggles(DOMElements.typeBienGroup, 'type_bien');
+        setupButtonToggles(DOMElements.notaryTypeGroup, 'notary_type');
+
         // Listen to changes on has_works checkbox
         DOMElements.hasWorksCheckbox.addEventListener('change', updateVisibility);
 
@@ -369,16 +410,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const charges = parseFloat(DOMElements.inputs.conso.value) + parseFloat(DOMElements.inputs.immobilier_credit.value) + parseFloat(DOMElements.inputs.leasing.value);
         const zone = determineZone(DOMElements.deptSelect.value, DOMElements.communeSelect.value);
 
-        const propertyType = document.querySelector('input[name="property_type"]:checked').value;
+        const propertyType = getSelectedButtonValue(DOMElements.propertyTypeGroup);
         
         let selectedTypeBien = null; // 'appartement' or 'maison' only relevant for 'neuf'
         if (propertyType === 'neuf') {
-            selectedTypeBien = document.querySelector('input[name="type_bien"]:checked').value;
+            selectedTypeBien = getSelectedButtonValue(DOMElements.typeBienGroup);
         }
 
         let selectedNotaryType = null; // 'none' or 'reduced' only relevant for 'neuf'
         if (propertyType === 'neuf') {
-            selectedNotaryType = document.querySelector('input[name="notary_type"]:checked').value;
+            selectedNotaryType = getSelectedButtonValue(DOMElements.notaryTypeGroup);
         }
 
         const hasWorks = (propertyType === 'ancien') ? DOMElements.hasWorksCheckbox.checked : false;
@@ -430,8 +471,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <p>Mensualité totale : ${formatCurrency(res.mensualite)}</p>
                 <hr>
                 <p>Crédit principal : ${formatCurrency(res.credit_amortissable)} (${formatCurrency(res.credit_monthly)}/mois)</p>
-                <p>PTZ : ${formatCurrency(res.ptz)}</p>
-                <p>Action Logement : ${formatCurrency(res.action_logement)}</p>
+                <p>PTZ : ${formatCurrency(res.ptz)} (${formatCurrency(res.ptz_monthly)}/mois)</p>
+                <p>Action Logement : ${formatCurrency(res.action_logement)} (${formatCurrency(res.action_logement_monthly)}/mois)</p>
                 <p>Assurance : ${formatCurrency(res.assurance_monthly)}/mois</p>
                 <p>Apport personnel : ${formatCurrency(res.apport)}</p>
                 <p>Frais de notaire estimés : ${formatCurrency(res.notary)}</p>
@@ -536,16 +577,13 @@ document.addEventListener('DOMContentLoaded', () => {
         dataToSave.departement = DOMElements.deptSelect.value;
         dataToSave.commune = DOMElements.communeSelect.value;
         
-        // Save property type radio selection
-        dataToSave.property_type = document.querySelector('input[name="property_type"]:checked').value;
+        // Save property type button selection
+        dataToSave.property_type = getSelectedButtonValue(DOMElements.propertyTypeGroup);
 
-        // Save new build specific radios if applicable
+        // Save new build specific buttons if applicable
         if (dataToSave.property_type === 'neuf') {
-            const selectedTypeBienRadio = document.querySelector('input[name="type_bien"]:checked');
-            dataToSave.type_bien = selectedTypeBienRadio ? selectedTypeBienRadio.value : null;
-
-            const selectedNotaryTypeRadio = document.querySelector('input[name="notary_type"]:checked');
-            dataToSave.notary_type = selectedNotaryTypeRadio ? selectedNotaryTypeRadio.value : null;
+            dataToSave.type_bien = getSelectedButtonValue(DOMElements.typeBienGroup);
+            dataToSave.notary_type = getSelectedButtonValue(DOMElements.notaryTypeGroup);
         } else {
             dataToSave.type_bien = null;
             dataToSave.notary_type = null;
@@ -604,36 +642,48 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (loadedCommune) {
                         DOMElements.communeSelect.value = loadedCommune;
                     }
-                    applyLoadedRadiosAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType);
+                    applyLoadedButtonsAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType);
                 }, 100); 
             } else {
-                applyLoadedRadiosAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType);
+                applyLoadedButtonsAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType);
             }
         };
         reader.readAsText(file);
         event.target.value = '';
     }
 
-    function applyLoadedRadiosAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType) {
-        // Set property type radio
+    function applyLoadedButtonsAndVisibility(loadedPropertyType, loadedTypeBien, loadedNotaryType) {
+        // Set property type button
         if (loadedPropertyType) {
-            const radio = document.querySelector(`input[name="property_type"][value="${loadedPropertyType}"]`);
-            if (radio) radio.checked = true;
+            DOMElements.propertyTypeButtons.forEach(button => {
+                button.classList.remove('selected');
+                if (button.dataset.value === loadedPropertyType) {
+                    button.classList.add('selected');
+                }
+            });
         }
 
         // Update visibility based on loaded property type and other checkboxes
         updateVisibility(); 
 
-        // Set 'type_bien' radio (Appartement/Maison)
+        // Set 'type_bien' button (Appartement/Maison)
         if (loadedTypeBien) {
-            const radio = document.querySelector(`input[name="type_bien"][value="${loadedTypeBien}"]`);
-            if (radio) radio.checked = true;
+            DOMElements.typeBienButtons.forEach(button => {
+                button.classList.remove('selected');
+                if (button.dataset.value === loadedTypeBien) {
+                    button.classList.add('selected');
+                }
+            });
         }
 
-        // Set 'notary_type' radio (Pas de frais/Frais réduits)
+        // Set 'notary_type' button (Pas de frais/Frais réduits)
         if (loadedNotaryType) {
-            const radio = document.querySelector(`input[name="notary_type"][value="${loadedNotaryType}"]`);
-            if (radio) radio.checked = true;
+            DOMElements.notaryTypeButtons.forEach(button => {
+                button.classList.remove('selected');
+                if (button.dataset.value === loadedNotaryType) {
+                    button.classList.add('selected');
+                }
+            });
         }
     }
 

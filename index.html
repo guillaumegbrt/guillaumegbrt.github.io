@@ -112,21 +112,21 @@
 
                 <div class="card">
                     <h2>Type de Bien</h2>
-                    <div class="radio-group" id="property-type-radios">
-                        <label><input type="radio" name="property_type" value="neuf" checked> Neuf</label>
-                        <label><input type="radio" name="property_type" value="recent"> Récent < 5 ans</label>
-                        <label><input type="radio" name="property_type" value="ancien"> Ancien > 5 ans</label>
+                    <div class="button-group" id="property-type-buttons">
+                        <button data-value="neuf" class="selected">Neuf</button>
+                        <button data-value="recent">Récent < 5 ans</button>
+                        <button data-value="ancien">Ancien > 5 ans</button>
                     </div>
 
                     <div id="new-build-options" style="display:none;">
                         <h3>Options Neuf</h3>
-                        <div class="radio-group">
-                            <label><input type="radio" name="type_bien" value="appartement" checked> Appartement</label>
-                            <label><input type="radio" name="type_bien" value="maison"> Maison</label>
+                        <div class="button-group" id="type-bien-buttons">
+                            <button data-value="appartement" class="selected">Appartement</button>
+                            <button data-value="maison">Maison</button>
                         </div>
-                        <div id="notary-options" class="radio-group">
-                            <label><input type="radio" name="notary_type" value="none" checked> Pas de frais réduits</label>
-                            <label><input type="radio" name="notary_type" value="reduced"> Frais réduits (2.5%)</label>
+                        <div id="notary-options" class="button-group">
+                            <button data-value="none" class="selected">Pas de frais de notaire</button>
+                            <button data-value="reduced">Frais de notaires réduits</button>
                         </div>
                         <div class="checkbox-group">
                             <label id="tva-reduite-label"><input type="checkbox" id="tva_reduite"> TVA réduite</label>
